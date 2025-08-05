@@ -677,6 +677,10 @@ let oldBlob;
 const screenWebsocketOnmessage = (message) => {
   oldBlob = message.data;
   const blob = new Blob([message.data], { type: 'image/jpeg' });
+
+  const now = new Date();
+  console.log(`Received frame at: ${now.toLocaleTimeString()}.${now.getMilliseconds()}, Size: ${blob.size} bytes`);
+
   const URL = window.URL || window.webkitURL;
   const img = new Image();
   const canvas = document.getElementById('iosCap');
@@ -847,8 +851,51 @@ const websocketOnmessage = (message) => {
 const inputValue = ref('');
 const inputBox = ref(null);
 const inputBoxStyle = ref({});
-const paste = ref('');
+let throttleTimer = null;
+let lastSendTime = 0;
 const changeInputHandle = () => {
+  // 如果已经有定时器在运行，则直接返回
+  if (throttleTimer) {
+    return;
+  }
+  
+  // 检查距离上次发送是否已经超过300ms
+  const now = Date.now();
+  const timeSinceLastSend = now - lastSendTime;
+  
+  if (timeSinceLastSend >= 300) {
+    // 直接发送
+    if (inputValue.value) {
+      websocket.send(
+        JSON.stringify({
+          type: 'send',
+          detail: inputValue.value,
+        })
+      );
+      inputValue.value = '';
+      lastSendTime = now;
+    }
+  } else {
+    // 设置定时器，在剩余时间内发送
+    const delay = 300 - timeSinceLastSend;
+    throttleTimer = setTimeout(() => {
+      if (inputValue.value) {
+        websocket.send(
+          JSON.stringify({
+            type: 'send',
+            detail: inputValue.value,
+          })
+        );
+        inputValue.value = '';
+        lastSendTime = Date.now();
+      }
+      throttleTimer = null;
+    }, delay);
+  }
+};
+
+const sendInputHandle = () => {
+  // 立即发送输入框中的内容
   if (inputValue.value) {
     websocket.send(
       JSON.stringify({
@@ -857,15 +904,49 @@ const changeInputHandle = () => {
       })
     );
     inputValue.value = '';
+    lastSendTime = Date.now();
+  }
+  
+  // 清除节流定时器，避免重复发送
+  if (throttleTimer) {
+    clearTimeout(throttleTimer);
+    throttleTimer = null;
+  }
+};
+
+const batchSendInputHandle = () => {
+  // 批量发送输入框中的内容，使用setValue方式
+  if (inputValue.value) {
+    websocket.send(
+      JSON.stringify({
+        type: 'batchSend',
+        detail: inputValue.value,
+      })
+    );
+    inputValue.value = '';
+    lastSendTime = Date.now();
+  }
+  
+  // 清除节流定时器，避免重复发送
+  if (throttleTimer) {
+    clearTimeout(throttleTimer);
+    throttleTimer = null;
   }
 };
 const deleteInputHandle = () => {
+  // 清除节流定时器，避免删除和输入操作冲突
+  if (throttleTimer) {
+    clearTimeout(throttleTimer);
+    throttleTimer = null;
+  }
+  
   websocket.send(
     JSON.stringify({
       type: 'send',
       detail: '\u007F',
     })
   );
+  lastSendTime = Date.now();
 };
 const setPasteboard = (text) => {
   websocket.send(
@@ -1232,6 +1313,11 @@ const close = () => {
   if (screenWebsocket !== null) {
     screenWebsocket.close();
     screenWebsocket = null;
+  }
+  // 清理节流定时器
+  if (throttleTimer) {
+    clearTimeout(throttleTimer);
+    throttleTimer = null;
   }
   window.close();
 };
