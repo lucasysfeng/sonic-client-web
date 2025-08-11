@@ -853,17 +853,18 @@ const inputBox = ref(null);
 const inputBoxStyle = ref({});
 let throttleTimer = null;
 let lastSendTime = 0;
+const interval = 400;
 const changeInputHandle = () => {
   // 如果已经有定时器在运行，则直接返回
   if (throttleTimer) {
     return;
   }
   
-  // 检查距离上次发送是否已经超过300ms
+  // 检查距离上次发送是否已经超过给定间隔
   const now = Date.now();
   const timeSinceLastSend = now - lastSendTime;
   
-  if (timeSinceLastSend >= 300) {
+  if (timeSinceLastSend >= interval) {
     // 直接发送
     if (inputValue.value) {
       websocket.send(
@@ -877,7 +878,7 @@ const changeInputHandle = () => {
     }
   } else {
     // 设置定时器，在剩余时间内发送
-    const delay = 300 - timeSinceLastSend;
+    const delay = interval - timeSinceLastSend;
     throttleTimer = setTimeout(() => {
       if (inputValue.value) {
         websocket.send(
