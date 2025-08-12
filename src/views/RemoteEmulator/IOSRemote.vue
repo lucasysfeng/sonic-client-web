@@ -53,6 +53,8 @@ import {
   Plus,
   CaretRight,
   CaretLeft,
+  CaretTop,
+  CaretBottom,
   Operation,
   Cellphone,
   VideoCamera,
@@ -74,8 +76,6 @@ import RenderDeviceName from '../../components/RenderDeviceName.vue';
 import PocoPane from '../../components/PocoPane.vue';
 import IOSPerf from '../../components/IOSPerf.vue';
 import RemotePageHeader from '../../components/RemotePageHeader.vue';
-
-const pocoPaneRef = ref(null);
 const iosPerfRef = ref(null);
 const { t: $t } = useI18n();
 const { toClipboard } = useClipboard();
@@ -679,7 +679,7 @@ const screenWebsocketOnmessage = (message) => {
   const blob = new Blob([message.data], { type: 'image/jpeg' });
 
   const now = new Date();
-  console.log(`Received frame at: ${now.toLocaleTimeString()}.${now.getMilliseconds()}, Size: ${blob.size} bytes`);
+  //console.log(`Received frame at: ${now.toLocaleTimeString()}.${now.getMilliseconds()}, Size: ${blob.size} bytes`);
 
   const URL = window.URL || window.webkitURL;
   const img = new Image();
@@ -979,6 +979,71 @@ const stopPerfmon = () => {
     })
   );
 };
+let lastSwipeTime = 0;
+const swipeTo = (direction) => {
+  const now = Date.now();
+  if (('up' == direction) || ('down' == direction)) {
+    // 上下滑动间隔1000ms
+    if (now - lastSwipeTime < 1000) {
+        ElMessage.warning({
+          message: '操作太频繁，请等待上一次滑动结束',
+        });
+      return;
+    }
+  } else {
+    // 左右滑动间隔500ms
+    if (now - lastSwipeTime < 500) {
+        ElMessage.warning({
+          message: '操作太频繁，请等待上一次滑动结束',
+        });
+      return;
+    }
+  }
+  lastSwipeTime = now;
+
+  // 获取屏幕中心点作为起始点
+  const centerX = Math.floor(imgWidth / 2);
+  const centerY = Math.floor(imgHeight / 2);
+  
+  // 定义滑动距离
+  const swipeDistance = 100;
+  
+  let pointA, pointB;
+  
+  switch (direction) {
+    case 'up':
+      pointA = `${centerX},${centerY}`;
+      pointB = `${centerX},${centerY - swipeDistance}`;
+      break;
+    case 'down':
+      pointA = `${centerX},${centerY}`;
+      pointB = `${centerX},${centerY + swipeDistance}`;
+      break;
+    case 'left':
+      // 从屏幕的1/5处滑动到4/5处
+      pointA = `${Math.floor(imgWidth / 5)},${centerY}`;
+      pointB = `${Math.floor(imgWidth * 4 / 5)},${centerY}`;
+      break;
+    case 'right':
+      // 从屏幕的4/5处滑动到1/5处
+      pointA = `${Math.floor(imgWidth * 4 / 5)},${centerY}`;
+      pointB = `${Math.floor(imgWidth / 5)},${centerY}`;
+      break;
+    default:
+      return;
+  }
+  
+  // 发送滑动指令
+  websocket.send(
+    JSON.stringify({
+      type: 'debug',
+      detail: 'swipe',
+      pointA,
+      pointB,
+    })
+  );
+};
+let oldLastSwipeTime = 0;
 const mouseup = (event) => {
   clearInterval(loop);
   time = 0;
@@ -1013,6 +1078,26 @@ const mouseup = (event) => {
       inputBox.value.focus();
     }
   } else {
+    const now = Date.now();
+    // 判断是上下滑动还是左右滑动
+    const isVerticalSwipe = Math.abs(y - moveY) > Math.abs(x - moveX);
+    if (isVerticalSwipe) {
+      // 上下滑动间隔1000ms
+      if (now - oldLastSwipeTime < 1000) {
+        ElMessage.warning({
+          message: '操作太频繁，请等待上一次滑动结束',
+        });
+        return;
+      }
+    } else {
+      // 左右滑动间隔500ms
+      if (now - oldLastSwipeTime < 500) {
+        ElMessage.warning({
+          message: '操作太频繁，请等待上一次滑动结束',
+        });
+        return;
+      }
+    }
     websocket.send(
       JSON.stringify({
         type: 'debug',
@@ -1022,6 +1107,7 @@ const mouseup = (event) => {
       })
     );
     inputBox.value.focus();
+    oldLastSwipeTime = now;
   }
   isLongPress = false;
 };
@@ -1593,6 +1679,27 @@ const checkAlive = () => {
                 @mousedown="mousedown"
                 @mouseleave="mouseleave"
               />
+            </div>
+            <!-- 添加四个滑动按钮 -->
+            <div style="display: flex; justify-content: center; margin-top: 10px">
+              <el-button-group>
+                <el-button type="primary" size="small" @click="swipeTo('up')">
+                  <el-icon><CaretTop /></el-icon>
+                  上滑
+                </el-button>
+                <el-button type="primary" size="small" @click="swipeTo('down')">
+                  <el-icon><CaretBottom /></el-icon>
+                  下滑
+                </el-button>
+                <el-button type="primary" size="small" @click="swipeTo('left')">
+                  <el-icon><CaretLeft /></el-icon>
+                  左滑
+                </el-button>
+                <el-button type="primary" size="small" @click="swipeTo('right')">
+                  <el-icon><CaretRight /></el-icon>
+                  右滑
+                </el-button>
+              </el-button-group>
             </div>
             <el-button-group id="iOSpressKey">
               <el-button
